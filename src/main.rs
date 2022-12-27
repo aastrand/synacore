@@ -555,9 +555,6 @@ fn read_symbols(filename: &str) -> HashMap<u16, String> {
         );
     }
 
-    //.map(|l| l.split(",").map(|p| p.to_string()).collect::<Vec<String>>())
-    //.map(|p| table.insert(u16::from_str_radix(&p[0], 16).unwrap(), p[1].to_string()));
-
     table
 }
 
@@ -588,7 +585,7 @@ mod tests {
     #[test]
     fn test_simple() {
         let program = vec![9, 32768, 32769, 4, 19, 32768];
-        let mut vm = VM::new(&program);
+        let mut vm = VM::new(&program, &HashMap::new());
         vm.run();
 
         assert_eq!(vm.regs[0], 4);
