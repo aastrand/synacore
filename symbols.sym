@@ -1,0 +1,7 @@
+07d1,print_num_exits
+05f8,print_reg_0
+084d,decrypt_char_to_reg_0
+05fb,?
+05b2,fetch_str_start
+0b94,print_current_zone
+16b6,print_exit
