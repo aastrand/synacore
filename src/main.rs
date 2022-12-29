@@ -15,7 +15,6 @@ extern crate text_io;
 struct VM {
     mem: Vec<u16>,
     symbols: HashMap<u16, String>,
-    regs: Vec<u16>,
     stack: Vec<u16>,
     ip: usize,
     input_buffer: VecDeque<char>,
@@ -25,11 +24,21 @@ struct VM {
 static LIMIT: u16 = 32768;
 
 impl VM {
-    pub fn new(mem: &Vec<u16>, symbols: &HashMap<u16, String>) -> VM {
+    pub fn new(input: &Vec<u16>, symbols: &HashMap<u16, String>) -> VM {
+        let size = LIMIT as usize + 8;
+        let mut mem = vec![0; size];
+        if input.len() > mem.len() {
+            panic!(
+                "Input buffer size out of bounds: {} > {}",
+                input.len(),
+                mem.len()
+            );
+        }
+        mem[0..input.len()].clone_from_slice(input);
+
         VM {
-            mem: mem.clone(),
+            mem: mem,
             symbols: symbols.clone(),
-            regs: vec![0; 8],
             stack: vec![],
             ip: 0,
             input_buffer: VecDeque::new(),
@@ -45,33 +54,36 @@ impl VM {
         }
     }
 
-    pub fn convert_arg(&self, arg: u16) -> u16 {
-        if arg <= LIMIT - 1 {
-            return arg;
+    fn regs(&self, idx: u16) -> u16 {
+        if idx > 7 {
+            panic!("Invalid register: {}", idx);
         }
-        if arg > 32767 && arg < 32776 {
-            return self.regs[arg as usize - LIMIT as usize];
+        self.mem[(LIMIT + idx) as usize]
+    }
+
+    fn convert_arg(&self, addr: u16) -> u16 {
+        if addr > LIMIT + 8 {
+            panic!("Invalid addr: {}", addr);
+        }
+        if addr >= LIMIT {
+            self.mem[addr as usize]
         } else {
-            panic!("invalid addr: {}", arg)
+            addr
         }
     }
 
-    pub fn store(&mut self, addr: usize, val: u16) {
-        if addr <= (LIMIT - 1).into() {
-            self.mem[addr] = val;
+    fn store(&mut self, addr: u16, val: u16) {
+        if addr > LIMIT + 8 {
+            panic!("Invalid addr: {}", addr);
         }
-        if addr > 32767 && addr < 32776 {
-            self.regs[addr - LIMIT as usize] = val;
-        } else {
-            panic!("invalid addr: {}", addr)
-        }
+        self.mem[addr as usize] = val;
     }
 
     fn print_op(&self, op: &str) {
         if self.debug {
             eprintln!(
             "{:04x}: {:<45} 0: {:04x} 1 {:04x} 2: {:04x} 3: {:04x} 4: {:04x} 5: {:04x} 6: {:04x} 7: {:04x} s({:>2}): {:04x}",
-            self.ip, op, self.regs[0], self.regs[1], self.regs[2], self.regs[3], self.regs[4], self.regs[5], self.regs[6], self.regs[7], self.stack.len(), self.stack.last().unwrap_or(&0)
+            self.ip, op, self.regs(0), self.regs(1), self.regs(2), self.regs(3), self.regs(4), self.regs(5), self.regs(6), self.regs(7), self.stack.len(), self.stack.last().unwrap_or(&0)
         );
         }
     }
@@ -95,6 +107,13 @@ impl VM {
                 } else {
                     println!("DEBUG: not enough arguments for wmem")
                 }
+            }
+            "debug" => {
+                self.debug = !self.debug;
+                println!(
+                    "DEBUG: switched debug mode {}",
+                    if self.debug { "on " } else { "off" }
+                )
             }
             _ => {}
         }
@@ -138,13 +157,14 @@ impl VM {
                 }
                 1 => {
                     // set 1 a b: set register <a> to the value of <b>
-                    let a = self.reg_offset(self.mem[self.ip + 1]);
+                    let a = self.mem[self.ip + 1];
                     let b = self.mem[self.ip + 2];
                     let b_val = self.convert_arg(self.mem[self.ip + 2]);
-                    self.regs[a as usize] = b_val;
+                    self.store(a, b_val);
 
                     self.print_op(&format!(
-                        "set  {} {:04x} ({:04x})",
+                        "set  {} ({:04x}) {:04x} ({:04x})",
+                        self.reg_offset(a),
                         a,
                         self.reg_offset(b),
                         b_val
@@ -166,11 +186,16 @@ impl VM {
                 }
                 3 => {
                     // pop: 3 a: remove the top element from the stack and write it into <a>; empty stack = error
-                    let a = self.reg_offset(self.mem[self.ip + 1]);
+                    let a = self.mem[self.ip + 1];
                     let val = self.stack.pop().unwrap();
-                    self.regs[a as usize] = val;
+                    self.store(a, val);
 
-                    self.print_op(&format!("pop  {} ({:04x})", a, val));
+                    self.print_op(&format!(
+                        "pop  {} {:04x} ({:04x})",
+                        self.reg_offset(a),
+                        a,
+                        val
+                    ));
                     self.ip += 2;
                 }
                 4 => {
@@ -178,19 +203,18 @@ impl VM {
                     let a = self.mem[self.ip + 1];
                     let b = self.mem[self.ip + 2];
                     let c = self.mem[self.ip + 3];
-                    let a_val = self.reg_offset(a);
                     let b_val = self.convert_arg(b);
                     let c_val = self.convert_arg(c);
 
                     if b_val == c_val {
-                        self.regs[a_val as usize] = 1;
+                        self.store(a, 1);
                     } else {
-                        self.regs[a_val as usize] = 0;
+                        self.store(a, 0);
                     }
 
                     self.print_op(&format!(
                         "eq   {} {:04x} ({:04x}) {:04x} ({:04x})",
-                        a_val,
+                        self.reg_offset(a),
                         self.reg_offset(b),
                         b_val,
                         self.reg_offset(c),
@@ -203,19 +227,18 @@ impl VM {
                     let a = self.mem[self.ip + 1];
                     let b = self.mem[self.ip + 2];
                     let c = self.mem[self.ip + 3];
-                    let a_val = self.reg_offset(a);
                     let b_val = self.convert_arg(b);
                     let c_val = self.convert_arg(c);
 
                     if b_val > c_val {
-                        self.regs[a_val as usize] = 1;
+                        self.store(a, 1);
                     } else {
-                        self.regs[a_val as usize] = 0;
+                        self.store(a, 0);
                     }
 
                     self.print_op(&format!(
                         "gt   {} {:04x} ({:04x}) {:04x} ({:04x})",
-                        a_val,
+                        self.reg_offset(a),
                         self.reg_offset(b),
                         b_val,
                         self.reg_offset(c),
@@ -239,8 +262,11 @@ impl VM {
                     let b_val = self.convert_arg(b);
 
                     self.print_op(&format!(
-                        "jt     {:04x} ({:04x}) {:04x} ({:04x})",
-                        a, a_val, b, b_val
+                        "jnz    {:04x} ({:04x}) {:04x} ({:04x})",
+                        self.reg_offset(a),
+                        a_val,
+                        self.reg_offset(b),
+                        b_val
                     ));
                     if a_val != 0 {
                         self.ip = b_val as usize;
@@ -256,8 +282,11 @@ impl VM {
                     let b_val = self.convert_arg(b);
 
                     self.print_op(&format!(
-                        "jf     {:04x} ({:04x}) {:04x} ({:04x})",
-                        a, a_val, b, b_val
+                        "jz     {:04x} ({:04x}) {:04x} ({:04x})",
+                        self.reg_offset(a),
+                        a_val,
+                        self.reg_offset(b),
+                        b_val
                     ));
                     if a_val == 0 {
                         self.ip = b_val as usize;
@@ -274,7 +303,7 @@ impl VM {
                     let c_val = self.convert_arg(c);
 
                     let r = (b_val + c_val) % LIMIT;
-                    self.store(a as usize, r);
+                    self.store(a, r);
 
                     self.print_op(&format!(
                         "add  {} {:04x} ({:04x}) {:04x} ({:04x})",
@@ -295,7 +324,7 @@ impl VM {
                     let c_val = self.convert_arg(c);
 
                     let r = ((b_val as u32 * c_val as u32) % LIMIT as u32) as u16;
-                    self.store(a as usize, r);
+                    self.store(a, r);
 
                     self.print_op(&format!(
                         "mult {} {:04x} ({:04x}) {:04x} ({:04x})",
@@ -316,7 +345,7 @@ impl VM {
                     let c_val = self.convert_arg(c);
 
                     let r = b_val % c_val;
-                    self.store(a as usize, r);
+                    self.store(a, r);
 
                     self.print_op(&format!(
                         "mod  {} {:04x} ({:04x}) {:04x} ({:04x})",
@@ -337,7 +366,7 @@ impl VM {
                     let c_val = self.convert_arg(c);
 
                     let r = b_val & c_val;
-                    self.store(a as usize, r);
+                    self.store(a, r);
 
                     self.print_op(&format!(
                         "and  {} {:04x} ({:04x}) {:04x} ({:04x})",
@@ -358,7 +387,7 @@ impl VM {
                     let c_val = self.convert_arg(c);
 
                     let r = b_val | c_val;
-                    self.store(a as usize, r);
+                    self.store(a, r);
 
                     self.print_op(&format!(
                         "or   {} {:04x} ({:04x}) {:04x} ({:04x})",
@@ -377,7 +406,7 @@ impl VM {
                     let b_val = self.convert_arg(b);
 
                     let r = !b_val & 0b0111_1111_1111_1111;
-                    self.store(a as usize, r);
+                    self.store(a, r);
 
                     self.print_op(&format!(
                         "not  {} {:04x} ({:04x})",
@@ -394,7 +423,7 @@ impl VM {
                     let b_val = self.convert_arg(b);
 
                     let r = self.mem[b_val as usize];
-                    self.store(a as usize, r);
+                    self.store(a, r);
 
                     self.print_op(&format!(
                         "rmem {} {:04x} ({:04x})",
@@ -414,7 +443,7 @@ impl VM {
                     self.mem[a_val as usize] = b_val;
 
                     self.print_op(&format!(
-                        "wmem {} ({:04x}) {:04x} ({:04x})",
+                        "wmem {:04x} ({:04x}) {:04x} ({:04x})",
                         self.reg_offset(a),
                         a_val,
                         self.reg_offset(b),
@@ -487,21 +516,35 @@ impl VM {
                     // this means that you can safely read whole lines from the keyboard
                     // and trust that they will be fully read
                     if self.input_buffer.len() == 0 {
-                        let input: String = read!("{}\n");
-                        for c in input.chars() {
-                            self.input_buffer.push_back(c);
-                        }
-                        self.input_buffer.push_back('\n');
-                        self.debug = true;
+                        while self.input_buffer.len() == 0 {
+                            let input: String = read!("{}\n");
+                            for c in input.chars() {
+                                self.input_buffer.push_back(c);
+                            }
+                            self.input_buffer.push_back('\n');
 
-                        if self.input_buffer[0] == '.' {
-                            self.handle_debug(&input)
+                            if self.input_buffer[0] == '.' {
+                                self.handle_debug(&input);
+                                self.input_buffer.clear();
+                            }
                         }
                     }
 
                     let a = self.mem[self.ip + 1];
-                    let r = self.input_buffer.pop_front().unwrap() as u16;
-                    self.store(a as usize, r);
+                    let val = self.input_buffer.pop_front().unwrap();
+                    let r = val as u16;
+                    self.store(a, r);
+
+                    let mut debug_val: &str = &val.to_string();
+                    if val == '\n' {
+                        debug_val = "\\n";
+                    }
+                    self.print_op(&format!(
+                        "in     {:04x} {:04x} ({})",
+                        self.reg_offset(a),
+                        r,
+                        debug_val
+                    ));
 
                     self.ip += 2;
                 }
@@ -561,7 +604,7 @@ fn read_symbols(filename: &str) -> HashMap<u16, String> {
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        panic!("Usage: synacore <file-to-execute>");
+        panic!("Usage: synacore <file-to-execute> [optionfal-symbols-file]");
     }
 
     let mem = read_input(&args[1]).unwrap();
@@ -570,7 +613,6 @@ fn main() -> io::Result<()> {
     } else {
         HashMap::new()
     };
-    println!("{:?}", table);
 
     let mut vm = VM::new(&mem, &table);
     vm.run();
@@ -584,11 +626,16 @@ mod tests {
 
     #[test]
     fn test_simple() {
+        // - The program "9,32768,32769,4,19,32768" occupies six memory addresses and should:
+        //  - Store into register 0 the sum of 4 and the value contained in register 1.
+        //  - Output to the terminal the character with the ascii code contained in register 0.
+
         let program = vec![9, 32768, 32769, 4, 19, 32768];
         let mut vm = VM::new(&program, &HashMap::new());
+        vm.debug = true;
         vm.run();
 
-        assert_eq!(vm.regs[0], 4);
+        assert_eq!(vm.regs(0), 4);
         assert_eq!(vm.ip, 6);
     }
 }
