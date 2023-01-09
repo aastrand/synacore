@@ -5,3 +5,4 @@
 05b2,fetch_decryption_key
 0b94,print_current_zone
 16b6,print_exit
+178b,fib

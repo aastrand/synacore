@@ -102,10 +102,31 @@ impl VM {
                         println!("DEBUG: wmem {:04x} {:04x}", a, v);
                         self.mem[a as usize] = v;
                     } else {
-                        println!("DEBUG: error parsing arguments for wmem")
+                        println!("DEBUG: error parsing arguments for wmem");
                     }
                 } else {
-                    println!("DEBUG: not enough arguments for wmem")
+                    println!("DEBUG: not enough arguments for wmem");
+                }
+            }
+            "wreg" => {
+                if parts.len() >= 3 {
+                    let reg = u16::from_str_radix(parts[1], 10);
+                    let val = u16::from_str_radix(parts[2], 10);
+
+                    if reg.as_ref().is_ok() && val.as_ref().is_ok() {
+                        let r = reg.unwrap();
+                        if r > 7 {
+                            println!("DEBUG: invalid register: {}", r);
+                        } else {
+                            let v = val.unwrap();
+                            println!("DEBUG: wreg {} {}", r, v);
+                            self.mem[r as usize + LIMIT as usize] = v;
+                        }
+                    } else {
+                        println!("DEBUG: error parsing arguments for wreg");
+                    }
+                } else {
+                    println!("DEBUG: not enough arguments for wreg");
                 }
             }
             "debug" => {
@@ -117,6 +138,7 @@ impl VM {
             }
             _ => {}
         }
+        println!("");
     }
 
     fn add_to_buffer(&mut self, input: &str) {
@@ -140,6 +162,46 @@ impl VM {
         self.add_to_buffer("go west");
         self.add_to_buffer("go passage");
         self.add_to_buffer("go ladder");
+        self.add_to_buffer("go west");
+        self.add_to_buffer("go south");
+        self.add_to_buffer("go north");
+        self.add_to_buffer("take can");
+        self.add_to_buffer("use can");
+        self.add_to_buffer("use lantern");
+        self.add_to_buffer("go west");
+        self.add_to_buffer("go ladder");
+        self.add_to_buffer("go darkness");
+        self.add_to_buffer("continue");
+        self.add_to_buffer("go west");
+        self.add_to_buffer("go west");
+        self.add_to_buffer("go west");
+        self.add_to_buffer("go west");
+        self.add_to_buffer("go north");
+        self.add_to_buffer("take red coin");
+        self.add_to_buffer("go north");
+        self.add_to_buffer("go west");
+        self.add_to_buffer("take blue coin");
+        self.add_to_buffer("go up");
+        self.add_to_buffer("take shiny coin");
+        self.add_to_buffer("go down");
+        self.add_to_buffer("go east");
+        self.add_to_buffer("go east");
+        self.add_to_buffer("take concave coin");
+        self.add_to_buffer("go down");
+        self.add_to_buffer("take corroded coin");
+        self.add_to_buffer("go up");
+        self.add_to_buffer("go west");
+        // (9, 2, 5, 7, 3), see brute-coins.py
+        self.add_to_buffer("use blue coin"); // == 9
+        self.add_to_buffer("use red coin"); // == 2
+        self.add_to_buffer("use shiny coin"); // == 5
+        self.add_to_buffer("use concave coin"); // == 7
+        self.add_to_buffer("use corroded coin"); // == 3
+        self.add_to_buffer("go north");
+        self.add_to_buffer("take teleporter");
+        self.add_to_buffer("use teleporter");
+        self.add_to_buffer("take business card");
+        self.add_to_buffer("take strange book");
 
         loop {
             if self.ip + 1 > self.mem.len() {
@@ -501,6 +563,9 @@ impl VM {
                     let mut debug_val: &str = &val.to_string();
                     if val == '\n' {
                         debug_val = "\\n";
+                        /*self.debug = !self.debug;
+                        self.print_op("dbg");
+                        self.debug = !self.debug;*/
                     }
                     self.print_op(&format!(
                         "out    {:04x} ({})",
