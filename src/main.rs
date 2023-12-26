@@ -148,8 +148,10 @@ impl VM {
         self.input_buffer.push_back('\n');
     }
 
-    pub fn run(&mut self) {
+    pub fn auto_play(&mut self) {
         self.add_to_buffer("take tablet");
+        self.add_to_buffer("use tablet");
+
         self.add_to_buffer("go doorway");
         self.add_to_buffer("go north");
         self.add_to_buffer("go north");
@@ -168,6 +170,7 @@ impl VM {
         self.add_to_buffer("take can");
         self.add_to_buffer("use can");
         self.add_to_buffer("use lantern");
+
         self.add_to_buffer("go west");
         self.add_to_buffer("go ladder");
         self.add_to_buffer("go darkness");
@@ -191,18 +194,64 @@ impl VM {
         self.add_to_buffer("take corroded coin");
         self.add_to_buffer("go up");
         self.add_to_buffer("go west");
+
         // (9, 2, 5, 7, 3), see brute-coins.py
         self.add_to_buffer("use blue coin"); // == 9
         self.add_to_buffer("use red coin"); // == 2
         self.add_to_buffer("use shiny coin"); // == 5
         self.add_to_buffer("use concave coin"); // == 7
         self.add_to_buffer("use corroded coin"); // == 3
+
         self.add_to_buffer("go north");
         self.add_to_buffer("take teleporter");
         self.add_to_buffer("use teleporter");
-        self.add_to_buffer("take business card");
-        self.add_to_buffer("take strange book");
 
+        self.add_to_buffer("north");
+        self.add_to_buffer("north");
+        self.add_to_buffer("north");
+        self.add_to_buffer("north");
+        self.add_to_buffer("north");
+        self.add_to_buffer("north");
+        self.add_to_buffer("north");
+        self.add_to_buffer("east");
+        self.add_to_buffer("take journal");
+        self.add_to_buffer("look journal");
+        self.add_to_buffer("west");
+        self.add_to_buffer("north");
+        self.add_to_buffer("north");
+        self.add_to_buffer("take orb");
+
+        // see vault.png and brute-vault.py
+        // 22 + 4 - 11 * 4 - 18 - 11 - 1
+        self.add_to_buffer("north"); // +
+        self.add_to_buffer("east"); // 4
+        self.add_to_buffer("east"); // -
+        self.add_to_buffer("north"); // 11
+        self.add_to_buffer("west"); // *
+        self.add_to_buffer("south"); // 4
+        self.add_to_buffer("east"); // -
+        self.add_to_buffer("east"); //18
+        self.add_to_buffer("west"); // -
+        self.add_to_buffer("north"); // 11
+        self.add_to_buffer("north"); // -
+        self.add_to_buffer("east"); // 1
+        self.add_to_buffer("vault");
+
+        self.add_to_buffer("take mirror");
+        self.add_to_buffer("use mirror");
+    }
+
+    pub fn patch(&mut self) {
+        // patch out self test on reg 7
+        self.mem[7 as usize + LIMIT as usize] = 25734;
+        self.mem[0x0209] = 8;
+        // patch out the recursive call
+        self.mem[0x156D] = 6;
+        self.mem[0x1571] = 21;
+        self.mem[0x1572] = 21;
+    }
+
+    pub fn run(&mut self) {
         loop {
             if self.ip + 1 > self.mem.len() {
                 println!("ran outside of memory range at ip={}", self.ip);
@@ -680,6 +729,9 @@ fn main() -> io::Result<()> {
     };
 
     let mut vm = VM::new(&mem, &table);
+    //vm.debug = true;
+    vm.patch();
+    vm.auto_play();
     vm.run();
 
     Ok(())
